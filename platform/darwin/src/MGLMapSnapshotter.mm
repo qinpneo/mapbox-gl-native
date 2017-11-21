@@ -27,24 +27,6 @@
 const CGPoint MGLLogoImagePosition = CGPointMake(8, 8);
 const CGFloat MGLSnapshotterMinimumPixelSize = 64;
 
-@interface MGLSnapshotAttributionOptions : NSObject
-#if TARGET_OS_IPHONE
-@property (nonatomic) UIImage *logoImage;
-#else
-@property (nonatomic) NSImage *logoImage;
-#endif
-
-@property (nonatomic) CGSize attributionBackgroundSize;
-
-@property (nonatomic) NS_ARRAY_OF(MGLAttributionInfo *) *attributionInfo;
-
-@end
-
-@implementation MGLSnapshotAttributionOptions
-@end
-
-
-
 @implementation MGLMapSnapshotOptions
 
 - (instancetype _Nonnull)initWithStyleURL:(nullable NSURL *)styleURL camera:(MGLMapCamera *)camera size:(CGSize) size
@@ -100,6 +82,7 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
 
 @interface MGLMapSnapshotter()
 @property (nonatomic) MGLMapSnapshotOptions *options;
+@property (strong, nonatomic) NS_ARRAY_OF(MGLAttributionInfo *) *attributionInfo;
 @end
 
 @implementation MGLMapSnapshotter {
@@ -187,6 +170,8 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
                 [infos growArrayByAddingAttributionInfosFromArray:tileSetInfos];
             }
             
+            self.attributionInfo = infos;
+            
             if (mbglError) {
                 NSString *description = @(mbgl::util::toString(mbglError).c_str());
                 NSDictionary *userInfo = @{NSLocalizedDescriptionKey: description};
@@ -209,28 +194,37 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
                 dispatch_queue_t workQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
                 dispatch_async(workQueue, ^{
 #if TARGET_OS_IPHONE
-                    MGLSnapshotAttributionOptions *option = [self attributionOptionsForSize:mglImage.size attributionInfo:infos];
-                    UIImage *logoImage = option.logoImage;
+                    MGLAttributionInfoStyle attributionInfoStyle = MGLAttributionInfoStyleLong;
+                    for (NSUInteger styleValue = MGLAttributionInfoStyleLong; styleValue >= MGLAttributionInfoStyleShort; styleValue--) {
+                        attributionInfoStyle = [self styleFromValue:styleValue];
+                        CGSize attributionSize = [self attributionSizeWithLogoStyle:attributionInfoStyle sourceAttributionStyle:attributionInfoStyle];
+                        if (attributionSize.width <= mglImage.size.width) {
+                            break;
+                        }
+                    }
+                    
+                    UIImage *logoImage = [self logoImageWithStyle:attributionInfoStyle];
+                    CGSize attributionBackgroundSize = [self attributionTextSizeWithStyle:attributionInfoStyle];
                     
                     CGRect logoImageRect = CGRectMake(MGLLogoImagePosition.x, mglImage.size.height - (MGLLogoImagePosition.y + logoImage.size.height), logoImage.size.width, logoImage.size.height);
-                    CGPoint attributionOrigin = CGPointMake(mglImage.size.width - 10 - option.attributionBackgroundSize.width,
-                                                            logoImageRect.origin.y + (logoImageRect.size.height / 2) - (option.attributionBackgroundSize.height / 2) + 1);
+                    CGPoint attributionOrigin = CGPointMake(mglImage.size.width - 10 - attributionBackgroundSize.width,
+                                                            logoImageRect.origin.y + (logoImageRect.size.height / 2) - (attributionBackgroundSize.height / 2) + 1);
                     if (!logoImage) {
                         logoImageRect = CGRectMake(0, mglImage.size.height - (MGLLogoImagePosition.y + _defaultLogoHeight), 0, _defaultLogoHeight);
-                        attributionOrigin = CGPointMake(10, logoImageRect.origin.y + (logoImageRect.size.height / 2) - (option.attributionBackgroundSize.height / 2) + 1);
+                        attributionOrigin = CGPointMake(10, logoImageRect.origin.y + (logoImageRect.size.height / 2) - (attributionBackgroundSize.height / 2) + 1);
                     }
                     
                     CGRect attributionBackgroundFrame = CGRectMake(attributionOrigin.x,
                                                                    attributionOrigin.y,
-                                                                   option.attributionBackgroundSize.width,
-                                                                   option.attributionBackgroundSize.height);
+                                                                   attributionBackgroundSize.width,
+                                                                   attributionBackgroundSize.height);
                     CGPoint attributionTextPosition = CGPointMake(attributionBackgroundFrame.origin.x + 10,
                                                                   attributionBackgroundFrame.origin.y - 1);
                     
                     CGRect cropRect = CGRectMake(attributionBackgroundFrame.origin.x * mglImage.scale,
                                                  attributionBackgroundFrame.origin.y * mglImage.scale,
-                                                 option.attributionBackgroundSize.width * mglImage.scale,
-                                                 option.attributionBackgroundSize.height * mglImage.scale);
+                                                 attributionBackgroundSize.width * mglImage.scale,
+                                                 attributionBackgroundSize.height * mglImage.scale);
                     
                     
                     UIGraphicsBeginImageContextWithOptions(mglImage.size, NO, self.options.scale);
@@ -250,7 +244,7 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
                     
                     [blurredAttributionBackground drawInRect:attributionBackgroundFrame];
                     
-                    [self drawAttributionText:option.attributionInfo origin:attributionTextPosition];
+                    [self drawAttributionTextWithStyle:attributionInfoStyle origin:attributionTextPosition];
                     
                     UIImage *compositedImage = UIGraphicsGetImageFromCurrentImageContext();
                     
@@ -258,12 +252,22 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
 #else
                     NSSize targetSize = NSMakeSize(self.options.size.width, self.options.size.height);
                     NSRect targetFrame = NSMakeRect(0, 0, targetSize.width, targetSize.height);
-                    MGLSnapshotAttributionOptions *option = [self attributionOptionsForSize:targetSize attributionInfo:infos];
-                    NSImage *logoImage = option.logoImage;
+                    
+                    MGLAttributionInfoStyle attributionInfoStyle = MGLAttributionInfoStyleLong;
+                    for (NSUInteger styleValue = MGLAttributionInfoStyleLong; styleValue >= MGLAttributionInfoStyleShort; styleValue--) {
+                        attributionInfoStyle = [self styleFromValue:styleValue];
+                        CGSize attributionSize = [self attributionSizeWithLogoStyle:attributionInfoStyle sourceAttributionStyle:attributionInfoStyle];
+                        if (attributionSize.width <= mglImage.size.width) {
+                            break;
+                        }
+                    }
+                    
+                    NSImage *logoImage = [self logoImageWithStyle:attributionInfoStyle];
+                    CGSize attributionBackgroundSize = [self attributionTextSizeWithStyle:attributionInfoStyle];
                     NSImage *sourceImage = mglImage;
                     
                     CGRect logoImageRect = CGRectMake(MGLLogoImagePosition.x, MGLLogoImagePosition.y, logoImage.size.width, logoImage.size.height);
-                    CGPoint attributionOrigin = CGPointMake(targetFrame.size.width - 10 - option.attributionBackgroundSize.width,
+                    CGPoint attributionOrigin = CGPointMake(targetFrame.size.width - 10 - attributionBackgroundSize.width,
                                                             MGLLogoImagePosition.y + 1);
                     if (!logoImage) {
                         logoImageRect = CGRectMake(0, MGLLogoImagePosition.y, 0, _defaultLogoHeight);
@@ -272,10 +276,10 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
                     
                     CGRect attributionBackgroundFrame = CGRectMake(attributionOrigin.x,
                                                                    attributionOrigin.y,
-                                                                   option.attributionBackgroundSize.width,
-                                                                   option.attributionBackgroundSize.height);
+                                                                   attributionBackgroundSize.width,
+                                                                   attributionBackgroundSize.height);
                     CGPoint attributionTextPosition = CGPointMake(attributionBackgroundFrame.origin.x + 10,
-                                                                  logoImageRect.origin.y + (logoImageRect.size.height / 2) - (option.attributionBackgroundSize.height / 2));
+                                                                  logoImageRect.origin.y + (logoImageRect.size.height / 2) - (attributionBackgroundSize.height / 2));
                     
                     
                     NSImage *compositedImage = nil;
@@ -300,7 +304,7 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
 
                     [blurredAttributionBackground drawInRect:attributionBackgroundFrame];
                     
-                    [self drawAttributionText:option.attributionInfo origin:attributionTextPosition];
+                    [self drawAttributionTextWithStyle:attributionInfoStyle origin:attributionTextPosition];
                     
                     [compositedImage unlockFocus];
                     
@@ -319,15 +323,16 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
     });
 }
 
-- (void)drawAttributionText:(NSArray *)attributionInfo origin:(CGPoint)origin
+- (void)drawAttributionTextWithStyle:(MGLAttributionInfoStyle)attributionInfoStyle origin:(CGPoint)origin
 {
-    for (MGLAttributionInfo *info in attributionInfo) {
+    for (MGLAttributionInfo *info in self.attributionInfo) {
         if (info.isFeedbackLink) {
             continue;
         }
-        [info.title drawAtPoint:origin];
+        MGLAttributionInfo *attribution = [info attributionInfoWithStyle:attributionInfoStyle];
+        [attribution.title drawAtPoint:origin];
         
-        origin.x += [info.title size].width + 10;
+        origin.x += [attribution.title size].width + 10;
     }
 }
 
@@ -358,69 +363,79 @@ const CGFloat MGLSnapshotterMinimumPixelSize = 64;
 #endif
 }
 
-- (MGLSnapshotAttributionOptions *)attributionOptionsForSize:(CGSize)snapshotSize attributionInfo:(NSArray *)attributionInfo
+- (MGLImage *)logoImageWithStyle:(MGLAttributionInfoStyle)style
 {
-    NSMutableArray *options = [NSMutableArray array];
-    MGLSnapshotAttributionOptions *largeLogoAttribution = [self attributionOptionsForAttributionInfo:attributionInfo abbreviated:NO];
+    MGLImage *logoImage;
+    switch (style) {
+        case MGLAttributionInfoStyleLong:
 #if TARGET_OS_IPHONE
-    largeLogoAttribution.logoImage = [UIImage imageNamed:@"mapbox" inBundle:[NSBundle mgl_frameworkBundle] compatibleWithTraitCollection:nil];
+            logoImage =[UIImage imageNamed:@"mapbox" inBundle:[NSBundle mgl_frameworkBundle] compatibleWithTraitCollection:nil];
 #else
-    largeLogoAttribution.logoImage = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mgl_frameworkBundle] pathForResource:@"mapbox" ofType:@"pdf"]];
+            logoImage = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mgl_frameworkBundle] pathForResource:@"mapbox" ofType:@"pdf"]];
 #endif
-    _defaultLogoHeight = largeLogoAttribution.logoImage.size.height;
-    
-    MGLSnapshotAttributionOptions *smallLogoAttribution = [self attributionOptionsForAttributionInfo:attributionInfo abbreviated:NO];
+            _defaultLogoHeight = logoImage.size.height;
+            break;
+            case MGLAttributionInfoStyleMedium:
 #if TARGET_OS_IPHONE
-    smallLogoAttribution.logoImage = [UIImage imageNamed:@"mapbox_helmet" inBundle:[NSBundle mgl_frameworkBundle] compatibleWithTraitCollection:nil];
+            logoImage = [UIImage imageNamed:@"mapbox_helmet" inBundle:[NSBundle mgl_frameworkBundle] compatibleWithTraitCollection:nil];
 #else
-    smallLogoAttribution.logoImage = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mgl_frameworkBundle] pathForResource:@"mapbox_helmet" ofType:@"pdf"]];
+            logoImage = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mgl_frameworkBundle] pathForResource:@"mapbox_helmet" ofType:@"pdf"]];
 #endif
-    
-    MGLSnapshotAttributionOptions *noLogoAttribution = [self attributionOptionsForAttributionInfo:attributionInfo abbreviated:YES];
-    
-    [options addObject:largeLogoAttribution];
-    [options addObject:smallLogoAttribution];
-    [options addObject:noLogoAttribution];
-    
-    for (MGLSnapshotAttributionOptions *attributionOptions in options) {
-        // -[Mapbox Logo]-[Attribution Background]-
-        CGFloat origin = attributionOptions.logoImage ? MGLLogoImagePosition.x : 0;
-        CGFloat width = origin + attributionOptions.logoImage.size.width + 10 + attributionOptions.attributionBackgroundSize.width + 10;
-        if (width <= snapshotSize.width) {
-            return attributionOptions;
-        }
+            break;
+            
+        case MGLAttributionInfoStyleShort:
+            logoImage = nil;
+            break;
     }
-    
-    return noLogoAttribution;
+    return logoImage;
 }
 
-- (MGLSnapshotAttributionOptions *)attributionOptionsForAttributionInfo:(NSArray *)attributionInfo abbreviated:(BOOL)isAbbreviated
+- (CGSize)attributionSizeWithLogoStyle:(MGLAttributionInfoStyle)logoStyle sourceAttributionStyle:(MGLAttributionInfoStyle)attributionStyle
 {
-    NSString *openStreetMap = NSLocalizedStringWithDefaultValue(@"OSM_FULL_NAME", nil, nil, @"OpenStreetMap", @"OpenStreetMap full name attribution");
-    NSString *OSM = NSLocalizedStringWithDefaultValue(@"OSM_SHORT_NAME", nil, nil, @"OSM", @"OpenStreetMap short name attribution");
-    NSMutableArray *infos = [NSMutableArray array];
+    MGLImage *logoImage = [self logoImageWithStyle:logoStyle];
+    
+    CGSize attributionBackgroundSize = [self attributionTextSizeWithStyle:attributionStyle];
+    
+    CGSize attributionSize = CGSizeZero;
+    
+    if (logoImage) {
+        attributionSize.width = MGLLogoImagePosition.x + logoImage.size.width + 10;
+    }
+    attributionSize.width = attributionSize.width + 10 + attributionBackgroundSize.width + 10;
+    attributionSize.height = MAX(logoImage.size.height, attributionBackgroundSize.height);
+    
+    return attributionSize;
+}
+
+- (CGSize)attributionTextSizeWithStyle:(MGLAttributionInfoStyle)attributionStyle
+{
     CGSize attributionBackgroundSize = CGSizeMake(10, 0);
-    for (MGLAttributionInfo *info in attributionInfo) {
+    for (MGLAttributionInfo *info in self.attributionInfo) {
         if (info.isFeedbackLink) {
             continue;
         }
-        MGLAttributionInfo *attribution = [info copy];
-        NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithAttributedString:info.title];
-        [title removeAttribute:NSUnderlineStyleAttributeName range:NSMakeRange(0, [title.string length])];
-        if ([title.string rangeOfString:@"OpenStreetMap"].location != NSNotFound) {
-            [title.mutableString replaceOccurrencesOfString:@"OpenStreetMap" withString:isAbbreviated ? OSM : openStreetMap options:NSCaseInsensitiveSearch range:NSMakeRange(0, [title.mutableString length])];
-        }
-        attribution.title = title;
+        MGLAttributionInfo *attribution = [info attributionInfoWithStyle:attributionStyle];
         attributionBackgroundSize.width += [attribution.title size].width + 10;
         attributionBackgroundSize.height = MAX([attribution.title size].height, attributionBackgroundSize.height);
-        [infos addObject:attribution];
     }
     
-    MGLSnapshotAttributionOptions *attributionOptions = [[MGLSnapshotAttributionOptions alloc] init];
-    attributionOptions.attributionBackgroundSize = attributionBackgroundSize;
-    attributionOptions.attributionInfo = infos;
-    
-    return attributionOptions;
+    return attributionBackgroundSize;
+}
+
+- (MGLAttributionInfoStyle)styleFromValue:(NSUInteger)styleValue
+{
+    switch (styleValue) {
+        case MGLAttributionInfoStyleShort:
+            return MGLAttributionInfoStyleShort;
+            break;
+        case MGLAttributionInfoStyleMedium:
+            return MGLAttributionInfoStyleMedium;
+            break;
+        case MGLAttributionInfoStyleLong:
+        default:
+            return MGLAttributionInfoStyleLong;
+            break;
+    }
 }
 
 - (void)cancel

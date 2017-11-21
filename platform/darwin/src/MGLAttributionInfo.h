@@ -8,6 +8,24 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /**
+ The attribution info is represented in the shortest format available.
+ */
+typedef NS_ENUM(NSUInteger, MGLAttributionInfoStyle) {
+    /**
+     Specifies a short attribution info style.
+     */
+    MGLAttributionInfoStyleShort = 1,
+    /**
+     Specifies a medium attribution info style.
+     */
+    MGLAttributionInfoStyleMedium,
+    /**
+     Specifies a long attribution info style.
+     */
+    MGLAttributionInfoStyleLong
+};
+
+/**
  Information about an attribution statement, usually a copyright or trademark
  statement, associated with a map content source.
  */
@@ -58,6 +76,19 @@ MGL_EXPORT
     `nil`.
  */
 - (nullable NSURL *)feedbackURLAtCenterCoordinate:(CLLocationCoordinate2D)centerCoordinate zoomLevel:(double)zoomLevel;
+
+/**
+ Returns the size.
+ 
+ @param style The attribution info style.
+
+ @return The size.
+ */
+- (CGSize)sizeWithStyle:(MGLAttributionInfoStyle)style;
+
+/**
+ */
+- (MGLAttributionInfo *)attributionInfoWithStyle:(MGLAttributionInfoStyle)style;
 
 @end
 

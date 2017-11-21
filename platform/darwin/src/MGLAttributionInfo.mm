@@ -168,6 +168,36 @@
     return components.URL;
 }
 
+- (CGSize)sizeWithStyle:(MGLAttributionInfoStyle)style
+{
+    CGSize attributionSize = CGSizeZero;
+    MGLAttributionInfo *attributionInfo = [self attributionInfoWithStyle:style];
+    attributionSize.width = [attributionInfo.title size].width;
+    attributionSize.height = [attributionInfo.title size].height;
+    return attributionSize;
+}
+
+- (MGLAttributionInfo *)attributionInfoWithStyle:(MGLAttributionInfoStyle)style
+{
+    NSString *openStreetMap = NSLocalizedStringWithDefaultValue(@"OSM_FULL_NAME", nil, nil, @"OpenStreetMap", @"OpenStreetMap full name attribution");
+    NSString *OSM = NSLocalizedStringWithDefaultValue(@"OSM_SHORT_NAME", nil, nil, @"OSM", @"OpenStreetMap short name attribution");
+    
+    MGLAttributionInfo *attribution = [self copy];
+    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithAttributedString:self.title];
+    [title removeAttribute:NSUnderlineStyleAttributeName range:NSMakeRange(0, [title.string length])];
+    
+    BOOL isAbbreviated = (style == MGLAttributionInfoStyleShort);
+    
+    if ([title.string rangeOfString:@"OpenStreetMap"].location != NSNotFound) {
+        [title.mutableString replaceOccurrencesOfString:@"OpenStreetMap" withString:isAbbreviated ? OSM : openStreetMap
+                                                options:NSCaseInsensitiveSearch
+                                                  range:NSMakeRange(0, [title.mutableString length])];
+    }
+    
+    attribution.title = title;
+    return attribution;
+}
+
 - (BOOL)isEqual:(id)object {
     return [object isKindOfClass:[self class]] && [[object title] isEqual:self.title] && [[object URL] isEqual:self.URL];
 }
