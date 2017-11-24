@@ -15,7 +15,7 @@ namespace android {
 
 MapSnapshotter::MapSnapshotter(jni::JNIEnv& _env,
                                jni::Object<MapSnapshotter> _obj,
-                               jni::Object<FileSource> jFileSource,
+                               jni::Object<FileSource> _jFileSource,
                                jni::jfloat _pixelRatio,
                                jni::jint width,
                                jni::jint height,
@@ -34,16 +34,16 @@ MapSnapshotter::MapSnapshotter(jni::JNIEnv& _env,
         return;
     }
 
-    auto& fileSource = mbgl::android::FileSource::getDefaultFileSource(_env, jFileSource);
+    jFileSource = FileSource::getNativePeer(_env, _jFileSource);
+    auto& fileSource = mbgl::android::FileSource::getDefaultFileSource(_env, _jFileSource);
     auto size = mbgl::Size { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
     auto cameraOptions = position ? CameraPosition::getCameraOptions(_env, position) : CameraOptions();
     optional<mbgl::LatLngBounds> bounds;
     if (region) {
         bounds = LatLngBounds::getLatLngBounds(_env, region);
     }
-
+    
     showLogo = _showLogo;
-
     // Create the core snapshotter
     snapshotter = std::make_unique<mbgl::MapSnapshotter>(fileSource,
                                                          *threadPool,
@@ -58,8 +58,12 @@ MapSnapshotter::MapSnapshotter(jni::JNIEnv& _env,
 
 MapSnapshotter::~MapSnapshotter() = default;
 
-void MapSnapshotter::start(JNIEnv&) {
+void MapSnapshotter::start(JNIEnv& env) {
     MBGL_VERIFY_THREAD(tid);
+    if (activationCounter == 0) {
+        jFileSource->resume(env);
+    }
+    activationCounter++;
 
     snapshotCallback = std::make_unique<Actor<mbgl::MapSnapshotter::Callback>>(
             *Scheduler::GetCurrent(),
@@ -79,16 +83,24 @@ void MapSnapshotter::start(JNIEnv&) {
             static auto onSnapshotReady = javaClass.GetMethod<void (jni::Object<MapSnapshot>)>(*_env, "onSnapshotReady");
             javaPeer->Call(*_env, onSnapshotReady, mapSnapshot);
         }
+        activationCounter--;
+        if (activationCounter == 0) {
+            jFileSource->pause(*_env);
+        }
     });
 
     snapshotter->snapshot(snapshotCallback->self());
 }
 
-void MapSnapshotter::cancel(JNIEnv&) {
+void MapSnapshotter::cancel(JNIEnv& env) {
     MBGL_VERIFY_THREAD(tid);
     snapshotCallback.reset();
-}
 
+    if (activationCounter > 0) {
+        jFileSource->pause(env);
+        activationCounter = 0;
+    }
+}
 
 void MapSnapshotter::setStyleUrl(JNIEnv& env, jni::String styleURL) {
     snapshotter->setStyleURL(jni::Make<std::string>(env, styleURL));
