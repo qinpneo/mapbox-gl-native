@@ -158,8 +158,8 @@ public class OfflineManager {
         getHandler().post(new Runnable() {
           @Override
           public void run() {
-            fileSource.deactivate();
             callback.onList(offlineRegions);
+            fileSource.deactivate();
           }
         });
       }
@@ -169,8 +169,8 @@ public class OfflineManager {
         getHandler().post(new Runnable() {
           @Override
           public void run() {
-            fileSource.deactivate();
             callback.onError(error);
+            fileSource.deactivate();
           }
         });
       }
@@ -211,8 +211,8 @@ public class OfflineManager {
         getHandler().post(new Runnable() {
           @Override
           public void run() {
-            ConnectivityReceiver.instance(context).deactivate();
             callback.onCreate(offlineRegion);
+            ConnectivityReceiver.instance(context).deactivate();
           }
         });
       }
@@ -222,8 +222,8 @@ public class OfflineManager {
         getHandler().post(new Runnable() {
           @Override
           public void run() {
-            ConnectivityReceiver.instance(context).deactivate();
             callback.onError(error);
+            ConnectivityReceiver.instance(context).deactivate();
           }
         });
       }
